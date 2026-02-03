@@ -7,10 +7,10 @@ Current Status:
     - Module 1 (Input Manager): DONE
     - Module 2 (ROI Manager): DONE
     - Module 3 (Preprocessing): DONE
-    - Module 4 (Motion Gate): TODO
+    - Module 4 (Motion Gate): DONE
     - Module 5 (Object Detection): TODO
-    - Module 6 (Spatial Logic): TODO
-    - Module 7 (Policy & Visualization): TODO
+    - Module 6 (Decision Logic): TODO
+    - Module 7 (Visualizer): TODO
 
 Usage:
     python main.py
@@ -33,31 +33,28 @@ import sys
 import os
 
 # Add src directory to path so we can import our modules
-# This is needed because we're running from src folder
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core.input_manager import InputManager
 from core.roi_manager import ROIManager
-from core.preprocessor import Preprocessor
+from core.preprocess import Preprocessor
+from core.motion_gate import MotionGate
 
 
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-# Change this to 0 to use webcam instead of video file
 VIDEO_PATH = "assets/videos/demo.mp4"
-# VIDEO_PATH = 0  # Uncomment this line to use webcam
+# VIDEO_PATH = 0  # Uncomment for webcam
 
-# Frame settings - these should match what InputManager expects
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 TARGET_FPS = 30
 
-# ROI configuration
 ROI_CONFIG_PATH = "configs/roi_config.json"
 
-# Preprocessing settings
-LOW_LIGHT_THRESHOLD = 50  # Below this intensity, we enhance the frame
+# Motion gate settings
+MOTION_THRESHOLD = 500  # Minimum pixels to trigger YOLO
 
 
 def main():
@@ -156,17 +153,21 @@ def main():
     # Step 3: Initialize Preprocessor
     # ---------------------------------------------------------------------
     print("[Main] Initializing Preprocessor...")
+    preprocessor = Preprocessor()
     
-    preprocessor = Preprocessor(
-        low_light_threshold=LOW_LIGHT_THRESHOLD,
-        apply_blur=True
+    # ---------------------------------------------------------------------
+    # Step 4: Initialize Motion Gate
+    # ---------------------------------------------------------------------
+    print("[Main] Initializing Motion Gate...")
+    motion_gate = MotionGate(
+        roi_mask=roi_mgr.get_mask(),
+        motion_threshold=MOTION_THRESHOLD
     )
-    
-    print(f"[Main] Low-light threshold: {LOW_LIGHT_THRESHOLD}")
+    print(f"[Main] Motion threshold: {MOTION_THRESHOLD} pixels")
     print()
     
     # ---------------------------------------------------------------------
-    # Step 4: Main Processing Loop
+    # Step 5: Main Processing Loop
     # ---------------------------------------------------------------------
     print("[Main] Starting main loop. Press 'q' to quit.")
     print("-" * 50)
@@ -175,7 +176,6 @@ def main():
     
     while True:
         # Read frame with FPS control
-        # This prevents video from playing too fast
         ok, frame = input_mgr.read_frame_with_fps_control()
         
         if not ok:
@@ -185,58 +185,42 @@ def main():
         frame_count += 1
         
         # -----------------------------------------------------------------
-        # Step 4a: Preprocessing (Module 3)
+        # Step 5a: Preprocessing (Module 3)
         # -----------------------------------------------------------------
-        # Process the frame - converts to grayscale, applies blur,
-        # and enhances if lighting is poor
-        processed = preprocessor.process(frame)
-        
-        # Get the results
-        gray_frame = processed['gray']          # For motion detection later
-        is_low_light = processed['is_low_light']
-        avg_intensity = processed['avg_intensity']
+        gray_frame, is_low_light, avg_intensity = preprocessor.process(frame)
         
         # -----------------------------------------------------------------
-        # TODO: Future modules will be called here
+        # Step 5b: Motion Gate (Module 4)
         # -----------------------------------------------------------------
-        # Step 5: Motion Detection (Module 4) - will use gray_frame
-        # Step 6: Object Detection if motion detected (Module 5)
-        # Step 7: Spatial logic - check if inside ROI (Module 6)
-        # Step 8: Policy check and visualization (Module 7)
+        trigger, motion_score, fg_mask = motion_gate.check(gray_frame)
+        
+        # -----------------------------------------------------------------
+        # TODO: Future modules
+        # -----------------------------------------------------------------
+        # Step 6: Object Detection if trigger=True (Module 5)
+        # Step 7: Decision logic - check if inside ROI (Module 6)
+        # Step 8: Visualization (Module 7)
         # -----------------------------------------------------------------
         
-        # Draw ROI on frame (so user can see the virtual fence)
+        # Draw ROI on frame
         display_frame = roi_mgr.draw_roi_on_frame(frame)
         
-        # Show preprocessing info on frame
-        # This helps us see if enhancement is being applied
-        status_text = f"Intensity: {avg_intensity:.0f}"
-        if is_low_light:
-            status_text += " [LOW LIGHT - Enhanced]"
+        # Show status line
+        status = f"Motion: {motion_score}"
+        if trigger:
+            status += " [TRIGGER]"
+            color = (0, 0, 255)  # Red when triggered
+        else:
+            color = (0, 255, 0)  # Green when idle
         
-        cv2.putText(
-            display_frame,
-            status_text,
-            (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 255, 255),  # Yellow
-            1
-        )
+        cv2.putText(display_frame, status, (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         
-        # Show frame count at bottom
-        cv2.putText(
-            display_frame, 
-            f"Frame: {frame_count}", 
-            (10, display_frame.shape[0] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX, 
-            0.5, 
-            (0, 255, 0),
-            1
-        )
-        
-        # Display the frame
+        # Display main frame
         cv2.imshow("Intelligent Virtual Fence", display_frame)
+        
+        # Show motion mask in separate window (for debugging)
+        cv2.imshow("Motion Mask", fg_mask)
         
         # Check for quit key
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -247,15 +231,17 @@ def main():
     # Cleanup
     # ---------------------------------------------------------------------
     print("-" * 50)
-    print(f"[Main] Processed {frame_count} frames total.")
+    print(f"[Main] Processed {frame_count} frames.")
     
-    # Show preprocessing stats
+    # Show stats
     prep_stats = preprocessor.get_stats()
-    print(f"[Main] Frames enhanced (low-light): {prep_stats['frames_enhanced']} ({prep_stats['enhancement_rate']})")
+    motion_stats = motion_gate.get_stats()
+    print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
+    print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
     
     input_mgr.release()
     cv2.destroyAllWindows()
-    print("[Main] Cleanup complete. Goodbye!")
+    print("[Main] Done.")
 
 
 if __name__ == "__main__":
