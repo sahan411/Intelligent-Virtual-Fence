@@ -10,7 +10,7 @@ Current Status:
     - Module 4 (Motion Gate): DONE
     - Module 5 (Object Detection): DONE
     - Module 6 (Decision Logic): DONE
-    - Module 7 (Visualizer): TODO
+    - Module 7 (Visualizer): DONE
 
 Usage:
     python main.py
@@ -41,6 +41,7 @@ from core.preprocess import Preprocessor
 from core.motion_gate import MotionGate
 from core.detector import Detector
 from core.decision_logic import DecisionLogic
+from core.visualizer import Visualizer
 
 
 # -----------------------------------------------------------------------------
@@ -48,7 +49,8 @@ from core.decision_logic import DecisionLogic
 # -----------------------------------------------------------------------------
 # Video path - use absolute path relative to project root
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VIDEO_PATH = os.path.join(PROJECT_ROOT, "assets", "videos", "demo.mp4")
+# VIDEO_PATH = os.path.join(PROJECT_ROOT, "assets", "videos", "demo.mp4")
+VIDEO_PATH = 0
 # VIDEO_PATH = 0  # Uncomment for webcam
 
 FRAME_WIDTH = 640
@@ -181,6 +183,12 @@ def main():
     print("[Main] Initializing Decision Logic...")
     decision_logic = DecisionLogic(roi_points=roi_mgr.roi_points)
     print("[Main] Using foot-point based intrusion detection.")
+    
+    # ---------------------------------------------------------------------
+    # Step 7: Initialize Visualizer
+    # ---------------------------------------------------------------------
+    print("[Main] Initializing Visualizer...")
+    visualizer = Visualizer(roi_points=roi_mgr.roi_points)
     print()
 
     # ---------------------------------------------------------------------
@@ -227,34 +235,11 @@ def main():
             intrusions = decision_logic.process(detections)
 
         # -----------------------------------------------------------------
-        # TODO: Module 7 - Visualizer (coming next)
+        # Step 6e: Visualization (Module 7)
         # -----------------------------------------------------------------
-
-        # Draw ROI on frame
-        display_frame = roi_mgr.draw_roi_on_frame(frame)
-
-        # Draw detection boxes (temporary - will move to visualizer)
-        # GREEN = outside ROI (safe), RED = inside ROI (intrusion)
-        for det in intrusions:
-            x1, y1, x2, y2 = det['bbox']
-            foot_x, foot_y = det['foot_point']
-            is_inside = det['inside_roi']
-            
-            # Choose color based on intrusion status
-            if is_inside:
-                color = (0, 0, 255)    # RED - intrusion!
-                label = f"INTRUSION {det['confidence']:.2f}"
-            else:
-                color = (0, 255, 0)    # GREEN - safe
-                label = f"{det['class_name']} {det['confidence']:.2f}"
-            
-            # Draw bounding box
-            cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(display_frame, label, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-            
-            # Draw foot-point (small circle at bottom-center)
-            cv2.circle(display_frame, (foot_x, foot_y), 4, color, -1)
+        # Create display frame and draw all visual elements
+        display_frame = frame.copy()
+        visualizer.draw(display_frame, intrusions, motion_triggered=trigger)
         # After warm-up: show motion score and trigger status
         stats = motion_gate.get_stats()
         
@@ -269,7 +254,9 @@ def main():
             else:
                 color = (0, 255, 0)  # Green when idle
         
-        cv2.putText(display_frame, status, (10, 25),
+        # Draw status at bottom (avoids overlap with alert banner)
+        h = display_frame.shape[0]
+        cv2.putText(display_frame, status, (10, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         
         # Display main frame
@@ -299,7 +286,7 @@ def main():
     print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
     print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
     print(f"[Main] YOLO inferences: {detector_stats['inferences']}, Detections: {detector_stats['total_detections']}")
-    print(f"[Main] Total intrusions: {decision_stats['total_intrusions']}")
+    print(f"[Main] Intrusion detections: {decision_stats['total_intrusions']} (frames where person inside ROI)")
     print("[Main] Done.")
 
 
