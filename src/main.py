@@ -9,7 +9,7 @@ Current Status:
     - Module 3 (Preprocessing): DONE
     - Module 4 (Motion Gate): DONE
     - Module 5 (Object Detection): DONE
-    - Module 6 (Decision Logic): TODO
+    - Module 6 (Decision Logic): DONE
     - Module 7 (Visualizer): TODO
 
 Usage:
@@ -40,6 +40,7 @@ from core.roi_manager import ROIManager
 from core.preprocess import Preprocessor
 from core.motion_gate import MotionGate
 from core.detector import Detector
+from core.decision_logic import DecisionLogic
 
 
 # -----------------------------------------------------------------------------
@@ -173,6 +174,13 @@ def main():
     # ---------------------------------------------------------------------
     print("[Main] Initializing YOLO Detector...")
     detector = Detector()
+    
+    # ---------------------------------------------------------------------
+    # Step 6: Initialize Decision Logic
+    # ---------------------------------------------------------------------
+    print("[Main] Initializing Decision Logic...")
+    decision_logic = DecisionLogic(roi_points=roi_mgr.roi_points)
+    print("[Main] Using foot-point based intrusion detection.")
     print()
 
     # ---------------------------------------------------------------------
@@ -207,26 +215,46 @@ def main():
         # Step 6c: Object Detection (Module 5) - only if triggered
         # -----------------------------------------------------------------
         detections = []
+        intrusions = []
         if trigger:
             detections = detector.detect(frame)
+            
+            # ---------------------------------------------------------------
+            # Step 6d: Decision Logic (Module 6) - check if inside ROI
+            # ---------------------------------------------------------------
+            # Process detections through decision logic
+            # Each detection gets foot_point and inside_roi added
+            intrusions = decision_logic.process(detections)
 
         # -----------------------------------------------------------------
-        # TODO: Future modules
-        # -----------------------------------------------------------------
-        # Step 7: Decision logic - check if inside ROI (Module 6)
-        # Step 8: Visualization (Module 7)
+        # TODO: Module 7 - Visualizer (coming next)
         # -----------------------------------------------------------------
 
         # Draw ROI on frame
         display_frame = roi_mgr.draw_roi_on_frame(frame)
 
         # Draw detection boxes (temporary - will move to visualizer)
-        for det in detections:
+        # GREEN = outside ROI (safe), RED = inside ROI (intrusion)
+        for det in intrusions:
             x1, y1, x2, y2 = det['bbox']
-            label = f"{det['class_name']} {det['confidence']:.2f}"
-            cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            foot_x, foot_y = det['foot_point']
+            is_inside = det['inside_roi']
+            
+            # Choose color based on intrusion status
+            if is_inside:
+                color = (0, 0, 255)    # RED - intrusion!
+                label = f"INTRUSION {det['confidence']:.2f}"
+            else:
+                color = (0, 255, 0)    # GREEN - safe
+                label = f"{det['class_name']} {det['confidence']:.2f}"
+            
+            # Draw bounding box
+            cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
             cv2.putText(display_frame, label, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            
+            # Draw foot-point (small circle at bottom-center)
+            cv2.circle(display_frame, (foot_x, foot_y), 4, color, -1)
         # After warm-up: show motion score and trigger status
         stats = motion_gate.get_stats()
         
@@ -251,7 +279,9 @@ def main():
         cv2.imshow("Motion Mask", fg_mask)
         
         # Check for quit key
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # waitKey(30) = ~30fps playback (human viewable speed)
+        # waitKey(1) = too fast, video ends before you can watch
+        if cv2.waitKey(30) & 0xFF == ord('q'):
             print("[Main] User pressed 'q'. Exiting.")
             break
     
@@ -265,9 +295,11 @@ def main():
     prep_stats = preprocessor.get_stats()
     motion_stats = motion_gate.get_stats()
     detector_stats = detector.get_stats()
+    decision_stats = decision_logic.get_stats()
     print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
     print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
     print(f"[Main] YOLO inferences: {detector_stats['inferences']}, Detections: {detector_stats['total_detections']}")
+    print(f"[Main] Total intrusions: {decision_stats['total_intrusions']}")
     print("[Main] Done.")
 
 

@@ -7,7 +7,7 @@ This package contains the main processing modules:
     - preprocess: Frame enhancement (Module 3) - DONE
     - motion_gate: Motion detection gate (Module 4) - DONE
     - detector: YOLO object detection (Module 5) - DONE
-    - decision_logic: Intrusion detection (Module 6) - TODO
+    - decision_logic: Intrusion detection (Module 6) - DONE
     - visualizer: Drawing and alerts (Module 7) - TODO
 """
 
@@ -16,3 +16,4 @@ from .roi_manager import ROIManager
 from .preprocess import Preprocessor
 from .motion_gate import MotionGate
 from .detector import Detector
+from .decision_logic import DecisionLogic
