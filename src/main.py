@@ -42,7 +42,8 @@ from core.motion_gate import MotionGate
 from core.detector import Detector
 from core.decision_logic import DecisionLogic
 from core.visualizer import Visualizer
-from utils import load_config, IntrusionLogger, ScreenshotCapture
+from utils import (load_config, IntrusionLogger, ScreenshotCapture,
+                   FPSCalculator, IntrusionDurationTracker, SoundAlert)
 
 
 # -----------------------------------------------------------------------------
@@ -234,6 +235,13 @@ def main():
         enabled=SCREENSHOT_ENABLED,
         cooldown_frames=SCREENSHOT_COOLDOWN
     )
+    
+    # ---------------------------------------------------------------------
+    # Step 9: Initialize FPS, Duration Tracker, and Sound Alert
+    # ---------------------------------------------------------------------
+    fps_calc = FPSCalculator(avg_count=30)
+    duration_tracker = IntrusionDurationTracker(fps=TARGET_FPS)
+    sound_alert = SoundAlert(enabled=True, frequency=1000, duration_ms=150, cooldown_seconds=2.0)
     print()
 
     # ---------------------------------------------------------------------
@@ -317,9 +325,18 @@ def main():
             
             # Capture screenshot with annotations (respects cooldown)
             screenshot.capture(display_frame, frame_count)
+            
+            # Play sound alert
+            sound_alert.alert()
         
         # Update screenshot cooldown even when no intrusion
         screenshot.tick()
+        
+        # -----------------------------------------------------------------
+        # Update FPS and Duration Tracker
+        # -----------------------------------------------------------------
+        current_fps = fps_calc.tick()
+        intrusion_duration = duration_tracker.update(has_intrusion)
         
         # After warm-up: show motion score and trigger status
         stats = motion_gate.get_stats()
@@ -336,9 +353,24 @@ def main():
                 color = (0, 255, 0)  # Green when idle
         
         # Draw status at bottom (avoids overlap with alert banner)
-        h = display_frame.shape[0]
+        h, w = display_frame.shape[:2]
         cv2.putText(display_frame, status, (10, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        
+        # Draw FPS at top-right corner
+        fps_text = f"FPS: {current_fps:.1f}"
+        cv2.putText(display_frame, fps_text, (w - 100, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        # Draw intrusion duration if active
+        if intrusion_duration > 0:
+            duration_text = f"In zone: {intrusion_duration:.1f}s"
+            # Draw with red background for visibility
+            text_size = cv2.getTextSize(duration_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+            cv2.rectangle(display_frame, (w - text_size[0] - 15, 30), 
+                          (w - 5, 55), (0, 0, 180), -1)
+            cv2.putText(display_frame, duration_text, (w - text_size[0] - 10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
         # Display main frame
         cv2.imshow("Intelligent Virtual Fence", display_frame)
@@ -389,19 +421,27 @@ def main():
     detector_stats = detector.get_stats()
     decision_stats = decision_logic.get_stats()
     screenshot_stats = screenshot.get_stats()
+    duration_stats = duration_tracker.get_stats()
+    sound_stats = sound_alert.get_stats()
     
+    print(f"[Main] Average FPS: {fps_calc.get_fps():.1f}")
     print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
     print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
     print(f"[Main] YOLO inferences: {detector_stats['inferences']}, Detections: {detector_stats['total_detections']}")
     print(f"[Main] Intrusion detections: {decision_stats['total_intrusions']} (frames where person inside ROI)")
+    print(f"[Main] Max intrusion duration: {duration_stats['max_duration']:.1f}s")
+    print(f"[Main] Total time in zone: {duration_stats['total_intrusion_time']:.1f}s")
     print(f"[Main] Screenshots saved: {screenshot_stats['total_captures']}")
+    print(f"[Main] Sound alerts: {sound_stats['beep_count']}")
     
     # Log session end with all stats
     logger.log_session_end({
         'frames': frame_count,
         'motion_triggers': motion_stats['triggered'],
         'yolo_inferences': detector_stats['inferences'],
-        'intrusions': decision_stats['total_intrusions']
+        'intrusions': decision_stats['total_intrusions'],
+        'max_intrusion_duration': duration_stats['max_duration'],
+        'total_intrusion_time': duration_stats['total_intrusion_time']
     })
     
     # Release resources

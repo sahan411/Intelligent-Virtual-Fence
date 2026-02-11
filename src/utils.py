@@ -5,6 +5,9 @@ Contains helper functions for:
     - Configuration loading
     - Logging intrusion events
     - Screenshot capture
+    - FPS calculation
+    - Intrusion duration tracking
+    - Sound alerts
 
 These utilities are separate from core modules to keep things clean.
 """
@@ -12,7 +15,16 @@ These utilities are separate from core modules to keep things clean.
 import os
 import json
 import cv2
+import time
+import threading
 from datetime import datetime
+
+# Try to import sound library (Windows only)
+try:
+    import winsound
+    SOUND_AVAILABLE = True
+except ImportError:
+    SOUND_AVAILABLE = False
 
 
 # -----------------------------------------------------------------------------
@@ -144,6 +156,8 @@ class IntrusionLogger:
         self._write_log(f"Total motion triggers: {stats.get('motion_triggers', 0)}")
         self._write_log(f"Total YOLO inferences: {stats.get('yolo_inferences', 0)}")
         self._write_log(f"Total intrusion detections: {stats.get('intrusions', 0)}")
+        self._write_log(f"Max intrusion duration: {stats.get('max_intrusion_duration', 0):.1f}s")
+        self._write_log(f"Total time in zone: {stats.get('total_intrusion_time', 0):.1f}s")
         self._write_log("="*60)
 
 
@@ -230,4 +244,206 @@ class ScreenshotCapture:
         """Get capture statistics."""
         return {
             'total_captures': self.total_captures
+        }
+
+
+# -----------------------------------------------------------------------------
+# FPS Calculator
+# -----------------------------------------------------------------------------
+
+class FPSCalculator:
+    """
+    Calculates real-time FPS (frames per second).
+    
+    Uses a rolling average for smoother display.
+    """
+    
+    def __init__(self, avg_count=30):
+        """
+        Initialize FPS calculator.
+        
+        Args:
+            avg_count: Number of frames to average over
+        """
+        self.avg_count = avg_count
+        self.frame_times = []
+        self.last_time = time.time()
+        self.current_fps = 0.0
+    
+    def tick(self):
+        """
+        Call this every frame to update FPS calculation.
+        
+        Returns:
+            Current FPS (smoothed)
+        """
+        current_time = time.time()
+        elapsed = current_time - self.last_time
+        self.last_time = current_time
+        
+        # Avoid division by zero
+        if elapsed > 0:
+            self.frame_times.append(elapsed)
+        
+        # Keep only recent frames for rolling average
+        if len(self.frame_times) > self.avg_count:
+            self.frame_times.pop(0)
+        
+        # Calculate average FPS
+        if len(self.frame_times) > 0:
+            avg_time = sum(self.frame_times) / len(self.frame_times)
+            self.current_fps = 1.0 / avg_time if avg_time > 0 else 0.0
+        
+        return self.current_fps
+    
+    def get_fps(self):
+        """Get current FPS value."""
+        return self.current_fps
+
+
+# -----------------------------------------------------------------------------
+# Intrusion Duration Tracker
+# -----------------------------------------------------------------------------
+
+class IntrusionDurationTracker:
+    """
+    Tracks how long a person has been inside the ROI.
+    
+    Useful for determining severity of intrusion.
+    """
+    
+    def __init__(self, fps=30):
+        """
+        Initialize duration tracker.
+        
+        Args:
+            fps: Expected frames per second (for time calculation)
+        """
+        self.fps = fps
+        self.intrusion_start_time = None
+        self.current_duration = 0.0
+        self.is_active = False
+        self.max_duration = 0.0  # Longest intrusion in session
+        self.total_intrusion_time = 0.0
+    
+    def update(self, has_intrusion):
+        """
+        Update intrusion status.
+        
+        Args:
+            has_intrusion: True if someone is inside ROI right now
+        
+        Returns:
+            Current intrusion duration in seconds (0 if no intrusion)
+        """
+        if has_intrusion:
+            if not self.is_active:
+                # Intrusion just started
+                self.intrusion_start_time = time.time()
+                self.is_active = True
+            
+            # Calculate duration
+            self.current_duration = time.time() - self.intrusion_start_time
+            
+            # Update max duration
+            if self.current_duration > self.max_duration:
+                self.max_duration = self.current_duration
+        else:
+            if self.is_active:
+                # Intrusion just ended
+                self.total_intrusion_time += self.current_duration
+            
+            self.is_active = False
+            self.current_duration = 0.0
+            self.intrusion_start_time = None
+        
+        return self.current_duration
+    
+    def get_duration_str(self):
+        """Get formatted duration string."""
+        if self.current_duration > 0:
+            return f"{self.current_duration:.1f}s"
+        return ""
+    
+    def get_stats(self):
+        """Get duration statistics."""
+        return {
+            'current_duration': self.current_duration,
+            'max_duration': self.max_duration,
+            'total_intrusion_time': self.total_intrusion_time
+        }
+
+
+# -----------------------------------------------------------------------------
+# Sound Alert
+# -----------------------------------------------------------------------------
+
+class SoundAlert:
+    """
+    Plays sound alert when intrusion is detected.
+    
+    Uses Windows beep (winsound) - plays in separate thread to avoid blocking.
+    On non-Windows systems, prints a message instead.
+    """
+    
+    def __init__(self, enabled=True, frequency=1000, duration_ms=200, cooldown_seconds=2.0):
+        """
+        Initialize sound alert.
+        
+        Args:
+            enabled: Whether sound alerts are enabled
+            frequency: Beep frequency in Hz (default 1000)
+            duration_ms: Beep duration in milliseconds
+            cooldown_seconds: Minimum time between beeps
+        """
+        self.enabled = enabled and SOUND_AVAILABLE
+        self.frequency = frequency
+        self.duration_ms = duration_ms
+        self.cooldown_seconds = cooldown_seconds
+        
+        self.last_beep_time = 0
+        self.beep_count = 0
+        
+        if enabled and not SOUND_AVAILABLE:
+            print("[Sound] Warning: winsound not available (Windows only)")
+        elif enabled:
+            print(f"[Sound] Alert enabled: {frequency}Hz, {duration_ms}ms")
+    
+    def _beep_thread(self):
+        """Play beep in separate thread (non-blocking)."""
+        try:
+            winsound.Beep(self.frequency, self.duration_ms)
+        except Exception:
+            pass
+    
+    def alert(self):
+        """
+        Play alert sound if cooldown has passed.
+        
+        Returns:
+            True if sound was played, False otherwise
+        """
+        if not self.enabled:
+            return False
+        
+        current_time = time.time()
+        
+        # Check cooldown
+        if current_time - self.last_beep_time < self.cooldown_seconds:
+            return False
+        
+        # Play beep in separate thread to avoid blocking video
+        thread = threading.Thread(target=self._beep_thread)
+        thread.daemon = True
+        thread.start()
+        
+        self.last_beep_time = current_time
+        self.beep_count += 1
+        
+        return True
+    
+    def get_stats(self):
+        """Get alert statistics."""
+        return {
+            'beep_count': self.beep_count
         }

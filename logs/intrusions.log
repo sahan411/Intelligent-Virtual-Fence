@@ -88,3 +88,81 @@
 [2026-02-11 11:04:17.335] Total YOLO inferences: 61
 [2026-02-11 11:04:17.335] Total intrusion detections: 40
 [2026-02-11 11:04:17.335] ============================================================
+[2026-02-11 11:12:50.314] ============================================================
+[2026-02-11 11:12:50.315] SESSION STARTED
+[2026-02-11 11:12:50.315] ============================================================
+[2026-02-11 11:12:53.676] INTRUSION - Frame 31: 1 person(s) inside ROI
+[2026-02-11 11:12:53.676]   -> Person at foot-point (272, 150), confidence: 0.74
+[2026-02-11 11:12:53.735] INTRUSION - Frame 32: 1 person(s) inside ROI
+[2026-02-11 11:12:53.744]   -> Person at foot-point (278, 150), confidence: 0.83
+[2026-02-11 11:12:53.798] INTRUSION - Frame 33: 1 person(s) inside ROI
+[2026-02-11 11:12:53.798]   -> Person at foot-point (281, 150), confidence: 0.81
+[2026-02-11 11:12:53.861] INTRUSION - Frame 34: 1 person(s) inside ROI
+[2026-02-11 11:12:53.862]   -> Person at foot-point (285, 152), confidence: 0.80
+[2026-02-11 11:12:53.913] INTRUSION - Frame 35: 1 person(s) inside ROI
+[2026-02-11 11:12:53.914]   -> Person at foot-point (290, 157), confidence: 0.74
+[2026-02-11 11:12:53.977] INTRUSION - Frame 36: 1 person(s) inside ROI
+[2026-02-11 11:12:53.977]   -> Person at foot-point (302, 181), confidence: 0.69
+[2026-02-11 11:12:54.044] INTRUSION - Frame 37: 1 person(s) inside ROI
+[2026-02-11 11:12:54.044]   -> Person at foot-point (309, 180), confidence: 0.80
+[2026-02-11 11:12:54.103] INTRUSION - Frame 38: 1 person(s) inside ROI
+[2026-02-11 11:12:54.103]   -> Person at foot-point (311, 179), confidence: 0.75
+[2026-02-11 11:12:54.166] INTRUSION - Frame 39: 1 person(s) inside ROI
+[2026-02-11 11:12:54.166]   -> Person at foot-point (311, 179), confidence: 0.86
+[2026-02-11 11:12:54.227] INTRUSION - Frame 40: 1 person(s) inside ROI
+[2026-02-11 11:12:54.228]   -> Person at foot-point (312, 179), confidence: 0.83
+[2026-02-11 11:12:54.290] INTRUSION - Frame 41: 1 person(s) inside ROI
+[2026-02-11 11:12:54.290]   -> Person at foot-point (313, 176), confidence: 0.75
+[2026-02-11 11:12:54.338] INTRUSION - Frame 42: 1 person(s) inside ROI
+[2026-02-11 11:12:54.338]   -> Person at foot-point (314, 172), confidence: 0.72
+[2026-02-11 11:12:54.396] INTRUSION - Frame 43: 1 person(s) inside ROI
+[2026-02-11 11:12:54.399]   -> Person at foot-point (316, 176), confidence: 0.67
+[2026-02-11 11:12:54.459] INTRUSION - Frame 44: 1 person(s) inside ROI
+[2026-02-11 11:12:54.459]   -> Person at foot-point (321, 178), confidence: 0.79
+[2026-02-11 11:12:54.523] INTRUSION - Frame 45: 1 person(s) inside ROI
+[2026-02-11 11:12:54.525]   -> Person at foot-point (324, 179), confidence: 0.69
+[2026-02-11 11:12:54.582] INTRUSION - Frame 46: 1 person(s) inside ROI
+[2026-02-11 11:12:54.582]   -> Person at foot-point (326, 179), confidence: 0.81
+[2026-02-11 11:12:54.636] INTRUSION - Frame 47: 1 person(s) inside ROI
+[2026-02-11 11:12:54.643]   -> Person at foot-point (330, 179), confidence: 0.83
+[2026-02-11 11:12:54.706] INTRUSION - Frame 48: 1 person(s) inside ROI
+[2026-02-11 11:12:54.706]   -> Person at foot-point (334, 179), confidence: 0.86
+[2026-02-11 11:12:54.755] INTRUSION - Frame 49: 1 person(s) inside ROI
+[2026-02-11 11:12:54.755]   -> Person at foot-point (337, 179), confidence: 0.88
+[2026-02-11 11:12:54.813] INTRUSION - Frame 50: 1 person(s) inside ROI
+[2026-02-11 11:12:54.819]   -> Person at foot-point (339, 179), confidence: 0.87
+[2026-02-11 11:12:54.872] INTRUSION - Frame 51: 1 person(s) inside ROI
+[2026-02-11 11:12:54.872]   -> Person at foot-point (342, 178), confidence: 0.84
+[2026-02-11 11:12:54.931] INTRUSION - Frame 52: 1 person(s) inside ROI
+[2026-02-11 11:12:54.932]   -> Person at foot-point (345, 178), confidence: 0.84
+[2026-02-11 11:12:54.989] INTRUSION - Frame 53: 1 person(s) inside ROI
+[2026-02-11 11:12:54.989]   -> Person at foot-point (348, 178), confidence: 0.74
+[2026-02-11 11:12:55.036] INTRUSION - Frame 54: 1 person(s) inside ROI
+[2026-02-11 11:12:55.036]   -> Person at foot-point (360, 174), confidence: 0.60
+[2026-02-11 11:12:55.092] INTRUSION - Frame 55: 1 person(s) inside ROI
+[2026-02-11 11:12:55.092]   -> Person at foot-point (366, 175), confidence: 0.65
+[2026-02-11 11:12:55.144] INTRUSION - Frame 56: 1 person(s) inside ROI
+[2026-02-11 11:12:55.145]   -> Person at foot-point (369, 176), confidence: 0.74
+[2026-02-11 11:12:55.207] INTRUSION - Frame 57: 1 person(s) inside ROI
+[2026-02-11 11:12:55.207]   -> Person at foot-point (373, 175), confidence: 0.80
+[2026-02-11 11:12:55.261] INTRUSION - Frame 58: 1 person(s) inside ROI
+[2026-02-11 11:12:55.261]   -> Person at foot-point (375, 175), confidence: 0.83
+[2026-02-11 11:12:55.321] INTRUSION - Frame 59: 1 person(s) inside ROI
+[2026-02-11 11:12:55.327]   -> Person at foot-point (377, 175), confidence: 0.81
+[2026-02-11 11:12:55.379] INTRUSION - Frame 60: 1 person(s) inside ROI
+[2026-02-11 11:12:55.379]   -> Person at foot-point (380, 176), confidence: 0.75
+[2026-02-11 11:12:55.429] INTRUSION - Frame 61: 1 person(s) inside ROI
+[2026-02-11 11:12:55.429]   -> Person at foot-point (382, 176), confidence: 0.78
+[2026-02-11 11:12:55.481] INTRUSION - Frame 62: 1 person(s) inside ROI
+[2026-02-11 11:12:55.481]   -> Person at foot-point (381, 178), confidence: 0.81
+[2026-02-11 11:12:55.538] INTRUSION - Frame 63: 1 person(s) inside ROI
+[2026-02-11 11:12:55.538]   -> Person at foot-point (383, 176), confidence: 0.71
+[2026-02-11 11:13:10.577] ============================================================
+[2026-02-11 11:13:10.577] SESSION ENDED
+[2026-02-11 11:13:10.577] Total frames processed: 376
+[2026-02-11 11:13:10.577] Total motion triggers: 50
+[2026-02-11 11:13:10.577] Total YOLO inferences: 50
+[2026-02-11 11:13:10.577] Total intrusion detections: 33
+[2026-02-11 11:13:10.577] Max intrusion duration: 1.9s
+[2026-02-11 11:13:10.577] Total time in zone: 1.9s
+[2026-02-11 11:13:10.577] ============================================================
