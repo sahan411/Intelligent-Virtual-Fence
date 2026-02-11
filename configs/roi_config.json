@@ -1,0 +1,39 @@
+{
+    "roi_points": [
+        [
+            189,
+            54
+        ],
+        [
+            453,
+            50
+        ],
+        [
+            448,
+            200
+        ],
+        [
+            232,
+            219
+        ],
+        [
+            232,
+            219
+        ],
+        [
+            208,
+            222
+        ],
+        [
+            171,
+            132
+        ],
+        [
+            190,
+            59
+        ]
+    ],
+    "frame_width": 640,
+    "frame_height": 360,
+    "description": "ROI configuration for Intelligent Virtual Fence"
+}

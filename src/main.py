@@ -8,7 +8,7 @@ Current Status:
     - Module 2 (ROI Manager): DONE
     - Module 3 (Preprocessing): DONE
     - Module 4 (Motion Gate): DONE
-    - Module 5 (Object Detection): TODO
+    - Module 5 (Object Detection): DONE
     - Module 6 (Decision Logic): TODO
     - Module 7 (Visualizer): TODO
 
@@ -39,19 +39,22 @@ from core.input_manager import InputManager
 from core.roi_manager import ROIManager
 from core.preprocess import Preprocessor
 from core.motion_gate import MotionGate
+from core.detector import Detector
 
 
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-VIDEO_PATH = "assets/videos/demo.mp4"
+# Video path - use absolute path relative to project root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VIDEO_PATH = os.path.join(PROJECT_ROOT, "assets", "videos", "demo.mp4")
 # VIDEO_PATH = 0  # Uncomment for webcam
 
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 TARGET_FPS = 30
 
-ROI_CONFIG_PATH = "configs/roi_config.json"
+ROI_CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "roi_config.json")
 
 # Motion gate settings
 MOTION_THRESHOLD = 500  # Minimum pixels to trigger YOLO
@@ -164,10 +167,16 @@ def main():
         motion_threshold=MOTION_THRESHOLD
     )
     print(f"[Main] Motion threshold: {MOTION_THRESHOLD} pixels")
-    print()
-    
+
     # ---------------------------------------------------------------------
-    # Step 5: Main Processing Loop
+    # Step 5: Initialize YOLO Detector
+    # ---------------------------------------------------------------------
+    print("[Main] Initializing YOLO Detector...")
+    detector = Detector()
+    print()
+
+    # ---------------------------------------------------------------------
+    # Step 6: Main Processing Loop
     # ---------------------------------------------------------------------
     print("[Main] Starting main loop. Press 'q' to quit.")
     print("-" * 50)
@@ -195,23 +204,42 @@ def main():
         trigger, motion_score, fg_mask = motion_gate.check(gray_frame)
         
         # -----------------------------------------------------------------
+        # Step 6c: Object Detection (Module 5) - only if triggered
+        # -----------------------------------------------------------------
+        detections = []
+        if trigger:
+            detections = detector.detect(frame)
+
+        # -----------------------------------------------------------------
         # TODO: Future modules
         # -----------------------------------------------------------------
-        # Step 6: Object Detection if trigger=True (Module 5)
         # Step 7: Decision logic - check if inside ROI (Module 6)
         # Step 8: Visualization (Module 7)
         # -----------------------------------------------------------------
-        
+
         # Draw ROI on frame
         display_frame = roi_mgr.draw_roi_on_frame(frame)
+
+        # Draw detection boxes (temporary - will move to visualizer)
+        for det in detections:
+            x1, y1, x2, y2 = det['bbox']
+            label = f"{det['class_name']} {det['confidence']:.2f}"
+            cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(display_frame, label, (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        # After warm-up: show motion score and trigger status
+        stats = motion_gate.get_stats()
         
-        # Show status line
-        status = f"Motion: {motion_score}"
-        if trigger:
-            status += " [TRIGGER]"
-            color = (0, 0, 255)  # Red when triggered
+        if not stats['warmed_up']:
+            status = f"Warming up... ({frame_count}/30)"
+            color = (255, 255, 0)  # Cyan during warm-up
         else:
-            color = (0, 255, 0)  # Green when idle
+            status = f"Motion: {motion_score}"
+            if trigger:
+                status += f" [TRIGGER] Detected: {len(detections)}"
+                color = (0, 0, 255)  # Red when triggered
+            else:
+                color = (0, 255, 0)  # Green when idle
         
         cv2.putText(display_frame, status, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
@@ -236,11 +264,10 @@ def main():
     # Show stats
     prep_stats = preprocessor.get_stats()
     motion_stats = motion_gate.get_stats()
+    detector_stats = detector.get_stats()
     print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
     print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
-    
-    input_mgr.release()
-    cv2.destroyAllWindows()
+    print(f"[Main] YOLO inferences: {detector_stats['inferences']}, Detections: {detector_stats['total_detections']}")
     print("[Main] Done.")
 
 
