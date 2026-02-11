@@ -42,25 +42,57 @@ from core.motion_gate import MotionGate
 from core.detector import Detector
 from core.decision_logic import DecisionLogic
 from core.visualizer import Visualizer
+from utils import load_config, IntrusionLogger, ScreenshotCapture
 
 
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
-# Video path - use absolute path relative to project root
+# Project root for resolving paths
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# VIDEO_PATH = os.path.join(PROJECT_ROOT, "assets", "videos", "demo.mp4")
-VIDEO_PATH = 0
-# VIDEO_PATH = 0  # Uncomment for webcam
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "config.json")
 
-FRAME_WIDTH = 640
-FRAME_HEIGHT = 360
-TARGET_FPS = 30
+# Load configuration (or use defaults if not found)
+config = load_config(CONFIG_PATH)
 
-ROI_CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "roi_config.json")
-
-# Motion gate settings
-MOTION_THRESHOLD = 500  # Minimum pixels to trigger YOLO
+if config:
+    # Video settings
+    video_source = config['video']['source']
+    if video_source == 0 or video_source == "0":
+        VIDEO_PATH = 0
+    else:
+        VIDEO_PATH = os.path.join(PROJECT_ROOT, video_source)
+    FRAME_WIDTH = config['video']['width']
+    FRAME_HEIGHT = config['video']['height']
+    TARGET_FPS = config['video']['target_fps']
+    PLAYBACK_DELAY = config['video']['playback_delay_ms']
+    
+    # Motion gate settings
+    MOTION_THRESHOLD = config['motion_gate']['threshold']
+    
+    # Logging settings
+    LOG_ENABLED = config['logging']['enabled']
+    LOG_FILE = os.path.join(PROJECT_ROOT, config['logging']['log_file'])
+    SCREENSHOT_ENABLED = config['logging']['screenshot_on_intrusion']
+    SCREENSHOT_FOLDER = os.path.join(PROJECT_ROOT, config['logging']['screenshot_folder'])
+    SCREENSHOT_COOLDOWN = config['logging']['screenshot_cooldown_frames']
+    
+    # ROI path
+    ROI_CONFIG_PATH = os.path.join(PROJECT_ROOT, config['paths']['roi_config'])
+else:
+    # Fallback defaults
+    VIDEO_PATH = os.path.join(PROJECT_ROOT, "assets", "videos", "demo.mp4")
+    FRAME_WIDTH = 640
+    FRAME_HEIGHT = 360
+    TARGET_FPS = 30
+    PLAYBACK_DELAY = 30
+    MOTION_THRESHOLD = 500
+    LOG_ENABLED = True
+    LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "intrusions.log")
+    SCREENSHOT_ENABLED = True
+    SCREENSHOT_FOLDER = os.path.join(PROJECT_ROOT, "assets", "screenshots")
+    SCREENSHOT_COOLDOWN = 30
+    ROI_CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "roi_config.json")
 
 
 def main():
@@ -189,17 +221,45 @@ def main():
     # ---------------------------------------------------------------------
     print("[Main] Initializing Visualizer...")
     visualizer = Visualizer(roi_points=roi_mgr.roi_points)
+    
+    # ---------------------------------------------------------------------
+    # Step 8: Initialize Logger and Screenshot Capture
+    # ---------------------------------------------------------------------
+    print("[Main] Initializing Logger...")
+    logger = IntrusionLogger(log_file=LOG_FILE, enabled=LOG_ENABLED)
+    
+    print("[Main] Initializing Screenshot Capture...")
+    screenshot = ScreenshotCapture(
+        save_folder=SCREENSHOT_FOLDER,
+        enabled=SCREENSHOT_ENABLED,
+        cooldown_frames=SCREENSHOT_COOLDOWN
+    )
     print()
 
     # ---------------------------------------------------------------------
-    # Step 6: Main Processing Loop
+    # Main Processing Loop
     # ---------------------------------------------------------------------
-    print("[Main] Starting main loop. Press 'q' to quit.")
+    print("[Main] Starting main loop.")
+    print("[Main] Controls: q=quit, SPACE=pause, d=debug, +/-=sensitivity, s=screenshot")
     print("-" * 50)
     
     frame_count = 0
+    paused = False
+    show_debug = True  # Motion mask window
+    current_threshold = MOTION_THRESHOLD
     
     while True:
+        # Handle pause state
+        if paused:
+            key = cv2.waitKey(100) & 0xFF
+            if key == ord(' '):
+                paused = False
+                print("[Main] Resumed.")
+            elif key == ord('q'):
+                print("[Main] User pressed 'q'. Exiting.")
+                break
+            continue
+        
         # Read frame with FPS control
         ok, frame = input_mgr.read_frame_with_fps_control()
         
@@ -224,6 +284,9 @@ def main():
         # -----------------------------------------------------------------
         detections = []
         intrusions = []
+        has_intrusion = False
+        inside_count = 0
+        
         if trigger:
             detections = detector.detect(frame)
             
@@ -233,6 +296,10 @@ def main():
             # Process detections through decision logic
             # Each detection gets foot_point and inside_roi added
             intrusions = decision_logic.process(detections)
+            
+            # Count how many are actually inside ROI
+            inside_count = sum(1 for d in intrusions if d.get('inside_roi', False))
+            has_intrusion = inside_count > 0
 
         # -----------------------------------------------------------------
         # Step 6e: Visualization (Module 7)
@@ -240,6 +307,20 @@ def main():
         # Create display frame and draw all visual elements
         display_frame = frame.copy()
         visualizer.draw(display_frame, intrusions, motion_triggered=trigger)
+        
+        # -----------------------------------------------------------------
+        # Log and capture screenshot on intrusion (after visualization)
+        # -----------------------------------------------------------------
+        if has_intrusion:
+            # Log the intrusion event
+            logger.log_intrusion(frame_count, inside_count, intrusions)
+            
+            # Capture screenshot with annotations (respects cooldown)
+            screenshot.capture(display_frame, frame_count)
+        
+        # Update screenshot cooldown even when no intrusion
+        screenshot.tick()
+        
         # After warm-up: show motion score and trigger status
         stats = motion_gate.get_stats()
         
@@ -263,14 +344,38 @@ def main():
         cv2.imshow("Intelligent Virtual Fence", display_frame)
         
         # Show motion mask in separate window (for debugging)
-        cv2.imshow("Motion Mask", fg_mask)
+        if show_debug:
+            cv2.imshow("Motion Mask", fg_mask)
         
-        # Check for quit key
-        # waitKey(30) = ~30fps playback (human viewable speed)
-        # waitKey(1) = too fast, video ends before you can watch
-        if cv2.waitKey(30) & 0xFF == ord('q'):
+        # -----------------------------------------------------------------
+        # Keyboard Controls
+        # -----------------------------------------------------------------
+        key = cv2.waitKey(PLAYBACK_DELAY) & 0xFF
+        
+        if key == ord('q'):
             print("[Main] User pressed 'q'. Exiting.")
             break
+        elif key == ord(' '):
+            paused = True
+            print("[Main] Paused. Press SPACE to resume.")
+        elif key == ord('d'):
+            show_debug = not show_debug
+            if not show_debug:
+                cv2.destroyWindow("Motion Mask")
+            print(f"[Main] Debug window: {'ON' if show_debug else 'OFF'}")
+        elif key == ord('+') or key == ord('='):
+            current_threshold += 100
+            motion_gate.set_threshold(current_threshold)
+            print(f"[Main] Motion threshold: {current_threshold}")
+        elif key == ord('-'):
+            current_threshold = max(100, current_threshold - 100)
+            motion_gate.set_threshold(current_threshold)
+            print(f"[Main] Motion threshold: {current_threshold}")
+        elif key == ord('s'):
+            # Manual screenshot
+            timestamp = frame_count
+            screenshot.capture(display_frame, timestamp)
+            print("[Main] Manual screenshot taken.")
     
     # ---------------------------------------------------------------------
     # Cleanup
@@ -283,10 +388,26 @@ def main():
     motion_stats = motion_gate.get_stats()
     detector_stats = detector.get_stats()
     decision_stats = decision_logic.get_stats()
+    screenshot_stats = screenshot.get_stats()
+    
     print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
     print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
     print(f"[Main] YOLO inferences: {detector_stats['inferences']}, Detections: {detector_stats['total_detections']}")
     print(f"[Main] Intrusion detections: {decision_stats['total_intrusions']} (frames where person inside ROI)")
+    print(f"[Main] Screenshots saved: {screenshot_stats['total_captures']}")
+    
+    # Log session end with all stats
+    logger.log_session_end({
+        'frames': frame_count,
+        'motion_triggers': motion_stats['triggered'],
+        'yolo_inferences': detector_stats['inferences'],
+        'intrusions': decision_stats['total_intrusions']
+    })
+    
+    # Release resources
+    input_mgr.release()
+    cv2.destroyAllWindows()
+    
     print("[Main] Done.")
 
 

@@ -1,0 +1,56 @@
+{
+    "_comment": "Intelligent Virtual Fence - Configuration File",
+    "_note": "All system thresholds in one place for easy tuning",
+    
+    "video": {
+        "source": "assets/videos/demo.mp4",
+        "width": 640,
+        "height": 360,
+        "target_fps": 30,
+        "playback_delay_ms": 30
+    },
+    
+    "preprocessing": {
+        "blur_kernel": 5,
+        "low_light_threshold": 50,
+        "clahe_clip_limit": 2.0,
+        "clahe_grid_size": 8
+    },
+    
+    "motion_gate": {
+        "threshold": 500,
+        "warmup_frames": 30,
+        "debounce_frames": 10,
+        "mog2_history": 500,
+        "mog2_var_threshold": 16,
+        "morph_kernel_size": 5
+    },
+    
+    "detector": {
+        "model": "yolov8n.pt",
+        "confidence_threshold": 0.4,
+        "classes_of_interest": [0]
+    },
+    
+    "decision": {
+        "_method": "foot-point (bottom-center of bbox)"
+    },
+    
+    "visualizer": {
+        "alert_hold_frames": 15,
+        "box_thickness": 2,
+        "font_scale": 0.5
+    },
+    
+    "logging": {
+        "enabled": true,
+        "log_file": "logs/intrusions.log",
+        "screenshot_on_intrusion": true,
+        "screenshot_folder": "assets/screenshots",
+        "screenshot_cooldown_frames": 30
+    },
+    
+    "paths": {
+        "roi_config": "configs/roi_config.json"
+    }
+}
