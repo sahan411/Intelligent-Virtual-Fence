@@ -152,6 +152,45 @@ class IntrusionLogger:
                     self._write_log(
                         f"  -> {class_name} at foot-point {foot}, confidence: {conf:.2f}"
                     )
+
+    def log_intrusion_start(self, frame_num, detection):
+        """
+        Log when a tracked target object first enters the ROI.
+
+        Args:
+            frame_num: Current frame number
+            detection: Detection dict with track_id, class_name, foot_point, confidence
+        """
+        track_id = detection.get('track_id', '?')
+        class_name = detection.get('class_name', 'object')
+        conf = detection.get('confidence', 0)
+        foot = detection.get('foot_point', (0, 0))
+        alert_level = detection.get('alert_level', 'medium').upper()
+
+        self._write_log(
+            f"INTRUSION START - Frame {frame_num}: "
+            f"Track {track_id} {class_name} inside ROI ({alert_level})"
+        )
+        self._write_log(f"  -> foot-point {foot}, confidence: {conf:.2f}")
+
+    def log_intrusion_end(self, frame_num, track_id, detection, duration_seconds):
+        """
+        Log when a tracked target object leaves the ROI or disappears.
+
+        Args:
+            frame_num: Current frame number
+            track_id: Stable tracker ID
+            detection: Last detection dict for this track
+            duration_seconds: Time spent inside ROI
+        """
+        class_name = detection.get('class_name', 'object')
+        foot = detection.get('foot_point', (0, 0))
+
+        self._write_log(
+            f"INTRUSION END - Frame {frame_num}: "
+            f"Track {track_id} {class_name} left ROI after {duration_seconds:.1f}s"
+        )
+        self._write_log(f"  -> last foot-point {foot}")
     
     def log_event(self, event_type, message):
         """
@@ -176,6 +215,8 @@ class IntrusionLogger:
         self._write_log(f"Total motion triggers: {stats.get('motion_triggers', 0)}")
         self._write_log(f"Total YOLO inferences: {stats.get('yolo_inferences', 0)}")
         self._write_log(f"Total intrusion detections: {stats.get('intrusions', 0)}")
+        self._write_log(f"Unique intruders: {stats.get('unique_intruders', 0)}")
+        self._write_log(f"Tracks created: {stats.get('tracks_created', 0)}")
         self._write_log(f"Max intrusion duration: {stats.get('max_intrusion_duration', 0):.1f}s")
         self._write_log(f"Total time in zone: {stats.get('total_intrusion_time', 0):.1f}s")
         self._write_log("="*60)

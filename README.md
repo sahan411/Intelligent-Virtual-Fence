@@ -20,6 +20,9 @@ Cheap → Smart → Decision
 - **Foot-point intrusion detection**: Ground-level spatial reasoning (not bbox center)
 - **Motion-gated YOLO**: Efficient - only runs detection when needed
 - **Configurable targets**: Switch between humans only, animals only, or humans + animals
+- **Object tracking**: Assigns stable IDs so the same person/animal is counted once
+- **Start/end intrusion logs**: Logs only when a tracked intruder enters or leaves the ROI
+- **Alert priority levels**: Humans are high priority; animals are medium priority
 - **Low-light enhancement**: Automatic CLAHE when scene is dark
 - **Real-time visualization**: Green (safe) / Red (intrusion) color coding
 - **Intrusion logging**: Timestamped audit trail
@@ -65,6 +68,21 @@ Cheap → Smart → Decision
 ```bash
 cd src
 python main.py
+```
+
+### Select Video Source
+```bash
+# Use configured source from configs/config.json
+python main.py
+
+# Use a different video file
+python main.py --source assets/videos/demo.mp4
+
+# Use webcam 0
+python main.py --webcam
+
+# Use another camera index
+python main.py --webcam --camera-index 1
 ```
 
 ### First Run - ROI Setup
@@ -131,6 +149,18 @@ All settings are in `configs/config.json`:
             }
         }
     },
+    "tracking": {
+        "enabled": true,
+        "max_missing_frames": 15,
+        "iou_threshold": 0.2,
+        "distance_threshold": 80
+    },
+    "alerts": {
+        "sound_enabled": true,
+        "sound_frequency": 1000,
+        "sound_duration_ms": 150,
+        "sound_cooldown_seconds": 2.0
+    },
     "logging": {
         "screenshot_on_intrusion": true
     }
@@ -174,6 +204,8 @@ Intelligent Virtual Fence/
 [Main] Motion triggers: 78 (20.7%)
 [Main] YOLO inferences: 78, Detections: 143
 [Main] Intrusion detections: 58 (target objects inside ROI)
+[Main] Unique intruders: 2
+[Main] Tracks created: 4
 [Main] Max intrusion duration: 4.2s
 [Main] Total time in zone: 12.8s
 [Main] Screenshots saved: 2
@@ -183,8 +215,10 @@ Intelligent Virtual Fence/
 ### Log File Sample (`logs/intrusions.log`)
 ```
 [2026-02-11 10:30:45.123] SESSION STARTED
-[2026-02-11 10:30:47.456] INTRUSION - Frame 85: 1 target object(s) inside ROI (person: 1)
-  -> person at foot-point (320, 280), confidence: 0.87
+[2026-02-11 10:30:47.456] INTRUSION START - Frame 85: Track 1 person inside ROI (HIGH)
+  -> foot-point (320, 280), confidence: 0.87
+[2026-02-11 10:30:51.673] INTRUSION END - Frame 140: Track 1 person left ROI after 4.2s
+  -> last foot-point (365, 285)
 [2026-02-11 10:31:02.789] SESSION ENDED
 ```
 
@@ -205,6 +239,28 @@ YOLOv8 uses COCO class IDs. The default profiles use:
 | 21 | bear |
 | 22 | zebra |
 | 23 | giraffe |
+
+## Testing
+
+Run lightweight validation tests:
+
+```bash
+python -m unittest discover -s tests
+```
+
+These tests check tracking IDs, config-driven preprocessing, required config sections, and start/end intrusion logging.
+
+## Demo Video Test Set
+
+The repository currently includes `assets/videos/demo.mp4`. For final evaluation, add separate real clips for:
+
+| Case | Suggested filename | Purpose |
+|------|--------------------|---------|
+| Day | `assets/videos/day_demo.mp4` | Normal daylight intrusion |
+| Night / low light | `assets/videos/night_demo.mp4` | CLAHE and low-light behavior |
+| Indoor | `assets/videos/indoor_demo.mp4` | Room/corridor scene |
+| Outdoor | `assets/videos/outdoor_demo.mp4` | Background movement and distance |
+| False alarm | `assets/videos/false_alarm_demo.mp4` | Motion outside ROI or harmless movement |
 
 ## Technical Details
 

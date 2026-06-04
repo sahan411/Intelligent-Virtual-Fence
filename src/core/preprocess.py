@@ -36,10 +36,25 @@ class Preprocessor:
         3. If low-light, apply CLAHE to grayscale
     """
     
-    def __init__(self):
-        """Initialize the preprocessor with CLAHE object."""
+    def __init__(self, blur_kernel=BLUR_KERNEL, low_light_threshold=LOW_LIGHT_THRESHOLD,
+                 clahe_clip_limit=2.0, clahe_grid_size=8):
+        """Initialize the preprocessor with configurable enhancement settings."""
+        self.blur_kernel = int(blur_kernel)
+        if self.blur_kernel % 2 == 0:
+            self.blur_kernel += 1
+        self.low_light_threshold = float(low_light_threshold)
+
+        if isinstance(clahe_grid_size, (list, tuple)):
+            grid_size = tuple(int(value) for value in clahe_grid_size[:2])
+        else:
+            grid_value = int(clahe_grid_size)
+            grid_size = (grid_value, grid_value)
+
         # Create CLAHE object once (reuse for performance)
-        self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        self.clahe = cv2.createCLAHE(
+            clipLimit=float(clahe_clip_limit),
+            tileGridSize=grid_size
+        )
         
         # Simple counters
         self.frames_processed = 0
@@ -65,10 +80,10 @@ class Preprocessor:
         
         # Step 2: Check lighting (before blur for accurate reading)
         avg_intensity = np.mean(gray)
-        is_low_light = avg_intensity < LOW_LIGHT_THRESHOLD
+        is_low_light = avg_intensity < self.low_light_threshold
         
         # Step 3: Apply Gaussian blur
-        gray = cv2.GaussianBlur(gray, (BLUR_KERNEL, BLUR_KERNEL), 0)
+        gray = cv2.GaussianBlur(gray, (self.blur_kernel, self.blur_kernel), 0)
         
         # Step 4: Apply CLAHE if low-light (on grayscale only)
         if is_low_light:

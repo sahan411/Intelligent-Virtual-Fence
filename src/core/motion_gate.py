@@ -64,7 +64,10 @@ class MotionGate:
         - Debounce (once triggered, stays on for 10 frames)
     """
     
-    def __init__(self, roi_mask, motion_threshold=MOTION_THRESHOLD):
+    def __init__(self, roi_mask, motion_threshold=MOTION_THRESHOLD,
+                 warmup_frames=WARMUP_FRAMES, debounce_frames=DEBOUNCE_FRAMES,
+                 mog2_history=MOG2_HISTORY, mog2_var_threshold=MOG2_VAR_THRESHOLD,
+                 morph_kernel_size=MORPH_KERNEL_SIZE):
         """
         Initialize the motion gate.
         
@@ -74,18 +77,23 @@ class MotionGate:
         """
         self.roi_mask = roi_mask
         self.motion_threshold = motion_threshold
+        self.warmup_frames = int(warmup_frames)
+        self.debounce_frames = int(debounce_frames)
+        self.mog2_history = int(mog2_history)
+        self.mog2_var_threshold = float(mog2_var_threshold)
+        self.morph_kernel_size = int(morph_kernel_size)
         
         # Create MOG2 background subtractor
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-            history=MOG2_HISTORY,
-            varThreshold=MOG2_VAR_THRESHOLD,
+            history=self.mog2_history,
+            varThreshold=self.mog2_var_threshold,
             detectShadows=MOG2_DETECT_SHADOWS
         )
         
         # Create morphology kernel (reuse for performance)
         self.kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, 
-            (MORPH_KERNEL_SIZE, MORPH_KERNEL_SIZE)
+            (self.morph_kernel_size, self.morph_kernel_size)
         )
         
         # Frame counter for warm-up
@@ -132,13 +140,13 @@ class MotionGate:
         
         # Step 6: Warm-up check
         # MOG2 needs time to learn background - don't trigger during warm-up
-        if self.frame_count <= WARMUP_FRAMES:
+        if self.frame_count <= self.warmup_frames:
             # Still warming up - never trigger
             return False, motion_score, fg_mask_clean
         
         if not self.is_warmed_up:
             self.is_warmed_up = True
-            print(f"[MotionGate] Warm-up complete after {WARMUP_FRAMES} frames.")
+            print(f"[MotionGate] Warm-up complete after {self.warmup_frames} frames.")
         
         # Step 7: Check threshold
         raw_trigger = motion_score > self.motion_threshold
@@ -146,7 +154,7 @@ class MotionGate:
         # Step 8: Debounce logic
         if raw_trigger:
             # Motion detected - reset debounce counter
-            self.debounce_counter = DEBOUNCE_FRAMES
+            self.debounce_counter = self.debounce_frames
         
         # If debounce counter > 0, we're in "triggered" state
         if self.debounce_counter > 0:
@@ -181,8 +189,8 @@ class MotionGate:
     def get_stats(self):
         """Get motion gate statistics."""
         trigger_rate = 0
-        if self.frame_count > WARMUP_FRAMES:
-            effective_frames = self.frame_count - WARMUP_FRAMES
+        if self.frame_count > self.warmup_frames:
+            effective_frames = self.frame_count - self.warmup_frames
             trigger_rate = (self.frames_triggered / effective_frames) * 100 if effective_frames > 0 else 0
         
         return {
@@ -190,6 +198,8 @@ class MotionGate:
             'triggered': self.frames_triggered,
             'trigger_rate': f"{trigger_rate:.1f}%",
             'threshold': self.motion_threshold,
+            'warmup_frames': self.warmup_frames,
+            'debounce_frames': self.debounce_frames,
             'warmed_up': self.is_warmed_up
         }
     
@@ -198,8 +208,8 @@ class MotionGate:
         Reset the background model and warm-up state.
         """
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
-            history=MOG2_HISTORY,
-            varThreshold=MOG2_VAR_THRESHOLD,
+            history=self.mog2_history,
+            varThreshold=self.mog2_var_threshold,
             detectShadows=MOG2_DETECT_SHADOWS
         )
         self.frame_count = 0

@@ -54,7 +54,31 @@
     "visualizer": {
         "alert_hold_frames": 15,
         "box_thickness": 2,
-        "font_scale": 0.5
+        "font_scale": 0.5,
+        "alert_levels": {
+            "high": {
+                "label": "HIGH PRIORITY",
+                "classes": [0]
+            },
+            "medium": {
+                "label": "MEDIUM PRIORITY",
+                "classes": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+            }
+        }
+    },
+
+    "tracking": {
+        "enabled": true,
+        "max_missing_frames": 15,
+        "iou_threshold": 0.2,
+        "distance_threshold": 80
+    },
+
+    "alerts": {
+        "sound_enabled": true,
+        "sound_frequency": 1000,
+        "sound_duration_ms": 150,
+        "sound_cooldown_seconds": 2.0
     },
     
     "logging": {

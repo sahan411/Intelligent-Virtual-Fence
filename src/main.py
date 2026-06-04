@@ -34,6 +34,8 @@ Controls (during ROI drawing):
 import cv2
 import sys
 import os
+import argparse
+import time
 
 # Add src directory to path so we can import our modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -44,6 +46,7 @@ from core.preprocess import Preprocessor
 from core.motion_gate import MotionGate
 from core.detector import Detector
 from core.decision_logic import DecisionLogic
+from core.tracker import ObjectTracker
 from core.visualizer import Visualizer
 from utils import (load_config, IntrusionLogger, ScreenshotCapture,
                    FPSCalculator, IntrusionDurationTracker, SoundAlert)
@@ -76,6 +79,54 @@ TARGET_MODE_KEYS = {
     ord('a'): "animals_only",
     ord('m'): "humans_animals"
 }
+
+
+def parse_args():
+    """Parse command-line options for video source selection."""
+    parser = argparse.ArgumentParser(description="Run the Intelligent Virtual Fence system.")
+    parser.add_argument(
+        "--source", "--video",
+        dest="source",
+        help="Video source path, relative project path, or camera index such as 0."
+    )
+    parser.add_argument(
+        "--webcam",
+        action="store_true",
+        help="Use webcam camera index 0."
+    )
+    parser.add_argument(
+        "--camera-index",
+        type=int,
+        default=0,
+        help="Camera index to use with --webcam. Default: 0."
+    )
+    return parser.parse_args()
+
+
+def resolve_video_source(source):
+    """Resolve config/CLI video source into a cv2.VideoCapture-compatible value."""
+    if source == 0 or source == "0":
+        return 0
+
+    if isinstance(source, int):
+        return source
+
+    if isinstance(source, str) and source.isdigit():
+        return int(source)
+
+    if os.path.isabs(source):
+        return source
+
+    return os.path.join(PROJECT_ROOT, source)
+
+
+def get_alert_level(class_id, alert_levels):
+    """Map a COCO class ID to a configured alert level."""
+    for level_name in ("high", "medium"):
+        level = alert_levels.get(level_name, {})
+        if class_id in level.get("classes", []):
+            return level_name
+    return "medium"
 
 
 def normalize_target_profiles(raw_profiles, fallback_classes):
@@ -127,17 +178,18 @@ config = load_config(CONFIG_PATH)
 if config:
     # Video settings
     video_source = config['video']['source']
-    if video_source == 0 or video_source == "0":
-        VIDEO_PATH = 0
-    else:
-        VIDEO_PATH = os.path.join(PROJECT_ROOT, video_source)
+    VIDEO_PATH = resolve_video_source(video_source)
     FRAME_WIDTH = config['video']['width']
     FRAME_HEIGHT = config['video']['height']
     TARGET_FPS = config['video']['target_fps']
     PLAYBACK_DELAY = config['video']['playback_delay_ms']
     
+    # Preprocessing settings
+    PREPROCESSING_CONFIG = config.get('preprocessing', {})
+
     # Motion gate settings
-    MOTION_THRESHOLD = config['motion_gate']['threshold']
+    MOTION_CONFIG = config.get('motion_gate', {})
+    MOTION_THRESHOLD = MOTION_CONFIG.get('threshold', 500)
 
     # Detector settings
     detector_config = config.get('detector', {})
@@ -151,6 +203,15 @@ if config:
     if DETECTION_MODE not in DETECTION_PROFILES:
         DETECTION_MODE = next(iter(DETECTION_PROFILES))
     DETECTOR_CLASSES = DETECTION_PROFILES[DETECTION_MODE]['classes']
+
+    # Visualization, tracking, and alert settings
+    VISUALIZER_CONFIG = config.get('visualizer', {})
+    ALERT_LEVELS = VISUALIZER_CONFIG.get('alert_levels', {
+        "high": {"label": "HIGH PRIORITY", "classes": [0]},
+        "medium": {"label": "MEDIUM PRIORITY", "classes": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]}
+    })
+    TRACKING_CONFIG = config.get('tracking', {})
+    ALERTS_CONFIG = config.get('alerts', {})
     
     # Logging settings
     LOG_ENABLED = config['logging']['enabled']
@@ -168,12 +229,21 @@ else:
     FRAME_HEIGHT = 360
     TARGET_FPS = 30
     PLAYBACK_DELAY = 30
+    PREPROCESSING_CONFIG = {}
+    MOTION_CONFIG = {}
     MOTION_THRESHOLD = 500
     DETECTOR_MODEL = "yolov8n.pt"
     DETECTOR_CONFIDENCE = 0.4
     DETECTION_PROFILES = DEFAULT_TARGET_PROFILES
     DETECTION_MODE = "humans_only"
     DETECTOR_CLASSES = DETECTION_PROFILES[DETECTION_MODE]['classes']
+    VISUALIZER_CONFIG = {}
+    ALERT_LEVELS = {
+        "high": {"label": "HIGH PRIORITY", "classes": [0]},
+        "medium": {"label": "MEDIUM PRIORITY", "classes": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]}
+    }
+    TRACKING_CONFIG = {}
+    ALERTS_CONFIG = {}
     LOG_ENABLED = True
     LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "intrusions.log")
     SCREENSHOT_ENABLED = True
@@ -191,10 +261,17 @@ def main():
         2. Initialize ROI Manager and let user draw the fence
         3. Run main processing loop
     """
+    args = parse_args()
+
     print("=" * 50)
     print("Intelligent Virtual Fence")
     print("=" * 50)
     print()
+    active_video_source = VIDEO_PATH
+    if args.webcam:
+        active_video_source = args.camera_index
+    elif args.source is not None:
+        active_video_source = resolve_video_source(args.source)
     
     # ---------------------------------------------------------------------
     # Step 1: Initialize Input Manager
@@ -202,7 +279,7 @@ def main():
     print("[Main] Initializing Input Manager...")
     
     input_mgr = InputManager(
-        source=VIDEO_PATH,
+        source=active_video_source,
         width=FRAME_WIDTH,
         height=FRAME_HEIGHT,
         fps=TARGET_FPS
@@ -278,7 +355,12 @@ def main():
     # Step 3: Initialize Preprocessor
     # ---------------------------------------------------------------------
     print("[Main] Initializing Preprocessor...")
-    preprocessor = Preprocessor()
+    preprocessor = Preprocessor(
+        blur_kernel=PREPROCESSING_CONFIG.get('blur_kernel', 5),
+        low_light_threshold=PREPROCESSING_CONFIG.get('low_light_threshold', 50),
+        clahe_clip_limit=PREPROCESSING_CONFIG.get('clahe_clip_limit', 2.0),
+        clahe_grid_size=PREPROCESSING_CONFIG.get('clahe_grid_size', 8)
+    )
     
     # ---------------------------------------------------------------------
     # Step 4: Initialize Motion Gate
@@ -286,7 +368,12 @@ def main():
     print("[Main] Initializing Motion Gate...")
     motion_gate = MotionGate(
         roi_mask=roi_mgr.get_mask(),
-        motion_threshold=MOTION_THRESHOLD
+        motion_threshold=MOTION_THRESHOLD,
+        warmup_frames=MOTION_CONFIG.get('warmup_frames', 30),
+        debounce_frames=MOTION_CONFIG.get('debounce_frames', 10),
+        mog2_history=MOTION_CONFIG.get('mog2_history', 500),
+        mog2_var_threshold=MOTION_CONFIG.get('mog2_var_threshold', 16),
+        morph_kernel_size=MOTION_CONFIG.get('morph_kernel_size', 5)
     )
     print(f"[Main] Motion threshold: {MOTION_THRESHOLD} pixels")
 
@@ -328,12 +415,30 @@ def main():
     print("[Main] Initializing Decision Logic...")
     decision_logic = DecisionLogic(roi_points=roi_mgr.roi_points)
     print("[Main] Using foot-point based intrusion detection.")
+
+    # ---------------------------------------------------------------------
+    # Step 6b: Initialize Object Tracker
+    # ---------------------------------------------------------------------
+    print("[Main] Initializing Object Tracker...")
+    tracking_enabled = TRACKING_CONFIG.get('enabled', True)
+    tracker = ObjectTracker(
+        max_missing_frames=TRACKING_CONFIG.get('max_missing_frames', 15),
+        iou_threshold=TRACKING_CONFIG.get('iou_threshold', 0.2),
+        distance_threshold=TRACKING_CONFIG.get('distance_threshold', 80)
+    ) if tracking_enabled else None
+    print(f"[Main] Object tracking: {'ON' if tracking_enabled else 'OFF'}")
     
     # ---------------------------------------------------------------------
     # Step 7: Initialize Visualizer
     # ---------------------------------------------------------------------
     print("[Main] Initializing Visualizer...")
-    visualizer = Visualizer(roi_points=roi_mgr.roi_points)
+    visualizer = Visualizer(
+        roi_points=roi_mgr.roi_points,
+        alert_hold_frames=VISUALIZER_CONFIG.get('alert_hold_frames', 15),
+        box_thickness=VISUALIZER_CONFIG.get('box_thickness', 2),
+        font_scale=VISUALIZER_CONFIG.get('font_scale', 0.5),
+        alert_levels=ALERT_LEVELS
+    )
     
     # ---------------------------------------------------------------------
     # Step 8: Initialize Logger and Screenshot Capture
@@ -353,7 +458,12 @@ def main():
     # ---------------------------------------------------------------------
     fps_calc = FPSCalculator(avg_count=30)
     duration_tracker = IntrusionDurationTracker(fps=TARGET_FPS)
-    sound_alert = SoundAlert(enabled=True, frequency=1000, duration_ms=150, cooldown_seconds=2.0)
+    sound_alert = SoundAlert(
+        enabled=ALERTS_CONFIG.get('sound_enabled', True),
+        frequency=ALERTS_CONFIG.get('sound_frequency', 1000),
+        duration_ms=ALERTS_CONFIG.get('sound_duration_ms', 150),
+        cooldown_seconds=ALERTS_CONFIG.get('sound_cooldown_seconds', 2.0)
+    )
     print()
 
     # ---------------------------------------------------------------------
@@ -368,6 +478,8 @@ def main():
     paused = False
     show_debug = True  # Motion mask window
     current_threshold = MOTION_THRESHOLD
+    active_intrusions = {}
+    unique_intrusion_track_ids = set()
     
     while True:
         # Handle pause state
@@ -407,6 +519,7 @@ def main():
         # -----------------------------------------------------------------
         detections = []
         intrusions = []
+        current_inside_tracks = {}
         has_intrusion = False
         inside_count = 0
         
@@ -419,10 +532,25 @@ def main():
             # Process detections through decision logic
             # Each detection gets foot_point and inside_roi added
             intrusions = decision_logic.process(detections)
-            
-            # Count how many are actually inside ROI
-            inside_count = sum(1 for d in intrusions if d.get('inside_roi', False))
-            has_intrusion = inside_count > 0
+
+            # Add alert level and stable tracking IDs.
+            for det in intrusions:
+                det['alert_level'] = get_alert_level(det.get('class_id'), ALERT_LEVELS)
+
+            if tracker is not None:
+                intrusions = tracker.update(intrusions)
+                current_inside_tracks = tracker.get_active_inside_tracks()
+            else:
+                current_inside_tracks = {
+                    index: det for index, det in enumerate(intrusions)
+                    if det.get('inside_roi', False)
+                }
+        elif tracker is not None:
+            tracker.mark_missed()
+            current_inside_tracks = tracker.get_active_inside_tracks()
+
+        inside_count = len(current_inside_tracks)
+        has_intrusion = inside_count > 0
 
         # -----------------------------------------------------------------
         # Step 6e: Visualization (Module 7)
@@ -432,16 +560,38 @@ def main():
         visualizer.draw(display_frame, intrusions, motion_triggered=trigger)
         
         # -----------------------------------------------------------------
-        # Log and capture screenshot on intrusion (after visualization)
+        # Log intrusion start/end events (after visualization)
         # -----------------------------------------------------------------
-        if has_intrusion:
-            # Log the intrusion event
-            logger.log_intrusion(frame_count, inside_count, intrusions)
-            
-            # Capture screenshot with annotations (respects cooldown)
+        current_track_ids = set(current_inside_tracks.keys())
+        active_track_ids = set(active_intrusions.keys())
+        new_track_ids = current_track_ids - active_track_ids
+        ended_track_ids = active_track_ids - current_track_ids
+
+        for track_id in sorted(new_track_ids):
+            detection = current_inside_tracks[track_id]
+            active_intrusions[track_id] = {
+                'detection': detection,
+                'start_time': time.time()
+            }
+            unique_intrusion_track_ids.add(track_id)
+            logger.log_intrusion_start(frame_count, detection)
+
+        for track_id in sorted(current_track_ids & active_track_ids):
+            active_intrusions[track_id]['detection'] = current_inside_tracks[track_id]
+
+        for track_id in sorted(ended_track_ids):
+            active = active_intrusions.pop(track_id)
+            duration_seconds = time.time() - active['start_time']
+            logger.log_intrusion_end(
+                frame_count,
+                track_id,
+                active['detection'],
+                duration_seconds
+            )
+
+        if new_track_ids:
+            # Capture evidence and play sound only when a new tracked intrusion starts.
             screenshot.capture(display_frame, frame_count)
-            
-            # Play sound alert
             sound_alert.alert()
         
         # Update screenshot cooldown even when no intrusion
@@ -457,7 +607,7 @@ def main():
         stats = motion_gate.get_stats()
         
         if not stats['warmed_up']:
-            status = f"Warming up... ({frame_count}/30)"
+            status = f"Warming up... ({frame_count}/{stats['warmup_frames']})"
             color = (255, 255, 0)  # Cyan during warm-up
         else:
             status = f"Motion: {motion_score}"
@@ -534,6 +684,16 @@ def main():
     # ---------------------------------------------------------------------
     # Cleanup
     # ---------------------------------------------------------------------
+    for track_id in sorted(active_intrusions.keys()):
+        active = active_intrusions.pop(track_id)
+        duration_seconds = time.time() - active['start_time']
+        logger.log_intrusion_end(
+            frame_count,
+            track_id,
+            active['detection'],
+            duration_seconds
+        )
+
     print("-" * 50)
     print(f"[Main] Processed {frame_count} frames.")
     
@@ -545,12 +705,18 @@ def main():
     screenshot_stats = screenshot.get_stats()
     duration_stats = duration_tracker.get_stats()
     sound_stats = sound_alert.get_stats()
+    tracker_stats = tracker.get_stats() if tracker is not None else {
+        'active_tracks': 0,
+        'total_tracks_created': 0
+    }
     
     print(f"[Main] Average FPS: {fps_calc.get_fps():.1f}")
     print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
     print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
     print(f"[Main] YOLO inferences: {detector_stats['inferences']}, Detections: {detector_stats['total_detections']}")
     print(f"[Main] Intrusion detections: {decision_stats['total_intrusions']} (target objects inside ROI)")
+    print(f"[Main] Unique intruders: {len(unique_intrusion_track_ids)}")
+    print(f"[Main] Tracks created: {tracker_stats['total_tracks_created']}")
     print(f"[Main] Max intrusion duration: {duration_stats['max_duration']:.1f}s")
     print(f"[Main] Total time in zone: {duration_stats['total_intrusion_time']:.1f}s")
     print(f"[Main] Screenshots saved: {screenshot_stats['total_captures']}")
@@ -562,6 +728,8 @@ def main():
         'motion_triggers': motion_stats['triggered'],
         'yolo_inferences': detector_stats['inferences'],
         'intrusions': decision_stats['total_intrusions'],
+        'unique_intruders': len(unique_intrusion_track_ids),
+        'tracks_created': tracker_stats['total_tracks_created'],
         'max_intrusion_duration': duration_stats['max_duration'],
         'total_intrusion_time': duration_stats['total_intrusion_time']
     })

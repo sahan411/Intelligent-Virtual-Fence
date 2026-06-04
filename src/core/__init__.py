@@ -8,6 +8,7 @@ This package contains the main processing modules:
     - motion_gate: Motion detection gate (Module 4) - DONE
     - detector: YOLO object detection (Module 5) - DONE
     - decision_logic: Intrusion detection (Module 6) - DONE
+    - tracker: Object tracking (Module 6b) - DONE
     - visualizer: Drawing and alerts (Module 7) - DONE
 """
 
@@ -17,4 +18,5 @@ from .preprocess import Preprocessor
 from .motion_gate import MotionGate
 from .detector import Detector
 from .decision_logic import DecisionLogic
+from .tracker import ObjectTracker
 from .visualizer import Visualizer

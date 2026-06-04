@@ -27,8 +27,10 @@ import numpy as np
 # Colors (BGR format)
 COLOR_SAFE = (0, 255, 0)       # Green - outside ROI
 COLOR_INTRUSION = (0, 0, 255)  # Red - inside ROI
+COLOR_MEDIUM_ALERT = (0, 165, 255)  # Orange - animal intrusion
 COLOR_ROI = (255, 255, 0)      # Cyan - ROI boundary
 COLOR_ALERT_BG = (0, 0, 200)   # Dark red - alert background
+COLOR_MEDIUM_ALERT_BG = (0, 110, 180)
 COLOR_WHITE = (255, 255, 255)
 
 # Drawing settings
@@ -46,7 +48,8 @@ class Visualizer:
     Keeps visualization separate from logic modules.
     """
     
-    def __init__(self, roi_points):
+    def __init__(self, roi_points, alert_hold_frames=15, box_thickness=2,
+                 font_scale=0.5, alert_levels=None):
         """
         Initialize visualizer with ROI points.
         
@@ -54,10 +57,17 @@ class Visualizer:
             roi_points: List of (x, y) tuples defining the ROI polygon
         """
         self.roi_points = roi_points
+        self.box_thickness = int(box_thickness)
+        self.font_scale = float(font_scale)
+        self.alert_levels = alert_levels or {
+            "high": {"label": "HIGH PRIORITY", "classes": [0]},
+            "medium": {"label": "MEDIUM PRIORITY", "classes": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]}
+        }
         
         # Alert persistence (so alert doesn't flicker)
         self.alert_frames = 0
-        self.alert_hold_time = 15  # Keep alert visible for N frames after intrusion
+        self.alert_hold_time = int(alert_hold_frames)  # Keep alert visible for N frames after intrusion
+        self.current_alert_level = None
     
     def draw(self, frame, intrusions, motion_triggered=False):
         """
@@ -85,9 +95,10 @@ class Visualizer:
         # Update and draw alert if needed
         if has_intrusion:
             self.alert_frames = self.alert_hold_time
+            self.current_alert_level = self._get_alert_level(intrusions)
         
         if self.alert_frames > 0:
-            self._draw_alert(frame)
+            self._draw_alert(frame, self.current_alert_level)
             self.alert_frames -= 1
         
         return frame
@@ -116,20 +127,25 @@ class Visualizer:
         is_inside = detection['inside_roi']
         confidence = detection['confidence']
         class_name = detection.get('class_name', 'object')
+        track_id = detection.get('track_id')
         
         # Choose color based on intrusion status
         if is_inside:
-            color = COLOR_INTRUSION
+            alert_level = self._class_alert_level(detection.get('class_id'))
+            color = COLOR_INTRUSION if alert_level == "high" else COLOR_MEDIUM_ALERT
             label = f"INTRUSION {class_name} {confidence:.0%}"
         else:
             color = COLOR_SAFE
             label = f"{class_name} {confidence:.0%}"
+
+        if track_id is not None:
+            label = f"ID {track_id} {label}"
         
         # Draw bounding box
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, BOX_THICKNESS)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, self.box_thickness)
         
         # Draw label background (makes text readable)
-        text_size = cv2.getTextSize(label, FONT, FONT_SCALE, FONT_THICKNESS)[0]
+        text_size = cv2.getTextSize(label, FONT, self.font_scale, FONT_THICKNESS)[0]
         cv2.rectangle(frame, 
                       (x1, y1 - text_size[1] - 10),
                       (x1 + text_size[0] + 4, y1),
@@ -137,7 +153,7 @@ class Visualizer:
         
         # Draw label text
         cv2.putText(frame, label, (x1 + 2, y1 - 5),
-                    FONT, FONT_SCALE, COLOR_WHITE, FONT_THICKNESS)
+                    FONT, self.font_scale, COLOR_WHITE, FONT_THICKNESS)
         
         # Draw foot-point (the decision point)
         cv2.circle(frame, (foot_x, foot_y), FOOT_POINT_RADIUS, color, -1)
@@ -145,7 +161,7 @@ class Visualizer:
         # Draw line from bottom of bbox to foot-point (visual clarity)
         cv2.line(frame, ((x1 + x2) // 2, y2), (foot_x, foot_y), color, 1)
     
-    def _draw_alert(self, frame):
+    def _draw_alert(self, frame, alert_level):
         """Draw alert banner at top of frame."""
         h, w = frame.shape[:2]
         
@@ -154,11 +170,13 @@ class Visualizer:
         
         # Draw semi-transparent red banner
         overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, banner_height), COLOR_ALERT_BG, -1)
+        bg_color = COLOR_ALERT_BG if alert_level == "high" else COLOR_MEDIUM_ALERT_BG
+        cv2.rectangle(overlay, (0, 0), (w, banner_height), bg_color, -1)
         cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
         
         # Draw alert text
-        alert_text = "! INTRUSION DETECTED !"
+        level_label = self.alert_levels.get(alert_level or "medium", {}).get("label", "ALERT")
+        alert_text = f"! {level_label} INTRUSION !"
         text_size = cv2.getTextSize(alert_text, FONT, 0.8, 2)[0]
         text_x = (w - text_size[0]) // 2
         text_y = (banner_height + text_size[1]) // 2
@@ -169,3 +187,18 @@ class Visualizer:
     def update_roi(self, roi_points):
         """Update ROI points if changed."""
         self.roi_points = roi_points
+
+    def _get_alert_level(self, detections):
+        """Return the highest active alert level for current intrusion detections."""
+        for detection in detections:
+            if detection.get('inside_roi') and self._class_alert_level(detection.get('class_id')) == "high":
+                return "high"
+        return "medium"
+
+    def _class_alert_level(self, class_id):
+        """Map a COCO class ID to configured alert level."""
+        for level_name in ("high", "medium"):
+            level = self.alert_levels.get(level_name, {})
+            if class_id in level.get("classes", []):
+                return level_name
+        return "medium"
