@@ -115,14 +115,15 @@ class Visualizer:
         foot_x, foot_y = detection['foot_point']
         is_inside = detection['inside_roi']
         confidence = detection['confidence']
+        class_name = detection.get('class_name', 'object')
         
         # Choose color based on intrusion status
         if is_inside:
             color = COLOR_INTRUSION
-            label = f"INTRUSION {confidence:.0%}"
+            label = f"INTRUSION {class_name} {confidence:.0%}"
         else:
             color = COLOR_SAFE
-            label = f"person {confidence:.0%}"
+            label = f"{class_name} {confidence:.0%}"
         
         # Draw bounding box
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, BOX_THICKNESS)

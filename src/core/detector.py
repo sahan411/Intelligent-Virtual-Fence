@@ -32,18 +32,22 @@ MODEL_NAME = "yolov8n.pt"
 CONFIDENCE_THRESHOLD = 0.4
 
 # Classes we care about (COCO dataset class IDs)
-# LOCKED: person only for now (class ID 0)
-# Later we can add: 16=dog, 17=horse, 18=sheep, 19=cow
+# Default is person only; main.py can override this from configs/config.json.
 CLASSES_OF_INTEREST = [0]  # person only
 
 # Class name mapping (for display)
 CLASS_NAMES = {
     0: "person",
+    14: "bird",
+    15: "cat",
     16: "dog",
     17: "horse",
     18: "sheep",
     19: "cow",
-    15: "cat"
+    20: "elephant",
+    21: "bear",
+    22: "zebra",
+    23: "giraffe"
 }
 
 
@@ -68,7 +72,7 @@ class Detector:
             classes: List of class IDs to detect
         """
         self.confidence = confidence
-        self.classes = classes
+        self.classes = [int(class_id) for class_id in classes]
         
         # Load YOLO model
         # First run will download the model automatically
@@ -161,4 +165,8 @@ class Detector:
         Args:
             classes: List of class IDs (e.g., [0, 16, 19] for person, dog, cow)
         """
-        self.classes = classes
+        self.classes = [int(class_id) for class_id in classes]
+
+    def get_target_names(self):
+        """Get readable names for the currently enabled target classes."""
+        return [CLASS_NAMES.get(class_id, f"class_{class_id}") for class_id in self.classes]

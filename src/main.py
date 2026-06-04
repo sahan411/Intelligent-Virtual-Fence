@@ -17,6 +17,9 @@ Usage:
 
 Controls (during main loop):
     q - Quit the application
+    h - Detect humans only
+    a - Detect animals only
+    m - Detect humans and animals
 
 Controls (during ROI drawing):
     Left Click  - Add a point
@@ -53,6 +56,71 @@ from utils import (load_config, IntrusionLogger, ScreenshotCapture,
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "config.json")
 
+DEFAULT_TARGET_PROFILES = {
+    "humans_only": {
+        "label": "Humans only",
+        "classes": [0]
+    },
+    "animals_only": {
+        "label": "Animals only",
+        "classes": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+    },
+    "humans_animals": {
+        "label": "Humans + animals",
+        "classes": [0, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+    }
+}
+
+TARGET_MODE_KEYS = {
+    ord('h'): "humans_only",
+    ord('a'): "animals_only",
+    ord('m'): "humans_animals"
+}
+
+
+def normalize_target_profiles(raw_profiles, fallback_classes):
+    """
+    Convert configured detector profiles into a predictable internal format.
+    Falls back to classes_of_interest if named profiles are missing.
+    """
+    if not isinstance(raw_profiles, dict):
+        raw_profiles = {
+            "custom": {
+                "label": "Configured targets",
+                "classes": fallback_classes
+            }
+        }
+
+    profiles = {}
+    for name, profile in raw_profiles.items():
+        if not isinstance(profile, dict):
+            continue
+
+        classes = profile.get("classes", [])
+        if not isinstance(classes, list) or len(classes) == 0:
+            continue
+
+        try:
+            class_ids = [int(class_id) for class_id in classes]
+        except (TypeError, ValueError):
+            continue
+
+        profiles[name] = {
+            "label": profile.get("label", name.replace("_", " ").title()),
+            "classes": class_ids
+        }
+
+    if profiles:
+        return profiles
+
+    return {
+        "custom": {
+            "label": "Configured targets",
+            "classes": [0]
+        }
+    }
+
+
 # Load configuration (or use defaults if not found)
 config = load_config(CONFIG_PATH)
 
@@ -70,6 +138,19 @@ if config:
     
     # Motion gate settings
     MOTION_THRESHOLD = config['motion_gate']['threshold']
+
+    # Detector settings
+    detector_config = config.get('detector', {})
+    DETECTOR_MODEL = detector_config.get('model', "yolov8n.pt")
+    DETECTOR_CONFIDENCE = detector_config.get('confidence_threshold', 0.4)
+    DETECTION_PROFILES = normalize_target_profiles(
+        detector_config.get('target_profiles'),
+        detector_config.get('classes_of_interest', [0])
+    )
+    DETECTION_MODE = detector_config.get('active_profile', "humans_only")
+    if DETECTION_MODE not in DETECTION_PROFILES:
+        DETECTION_MODE = next(iter(DETECTION_PROFILES))
+    DETECTOR_CLASSES = DETECTION_PROFILES[DETECTION_MODE]['classes']
     
     # Logging settings
     LOG_ENABLED = config['logging']['enabled']
@@ -88,6 +169,11 @@ else:
     TARGET_FPS = 30
     PLAYBACK_DELAY = 30
     MOTION_THRESHOLD = 500
+    DETECTOR_MODEL = "yolov8n.pt"
+    DETECTOR_CONFIDENCE = 0.4
+    DETECTION_PROFILES = DEFAULT_TARGET_PROFILES
+    DETECTION_MODE = "humans_only"
+    DETECTOR_CLASSES = DETECTION_PROFILES[DETECTION_MODE]['classes']
     LOG_ENABLED = True
     LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "intrusions.log")
     SCREENSHOT_ENABLED = True
@@ -208,7 +294,33 @@ def main():
     # Step 5: Initialize YOLO Detector
     # ---------------------------------------------------------------------
     print("[Main] Initializing YOLO Detector...")
-    detector = Detector()
+    detector = Detector(
+        model_name=DETECTOR_MODEL,
+        confidence=DETECTOR_CONFIDENCE,
+        classes=DETECTOR_CLASSES
+    )
+    target_mode = DETECTION_MODE
+    target_label = DETECTION_PROFILES[target_mode]['label']
+
+    def set_detection_mode(mode_name):
+        """Switch detector target profile without reloading the YOLO model."""
+        nonlocal target_mode, target_label
+
+        if mode_name not in DETECTION_PROFILES:
+            print(f"[Main] Unknown detection mode: {mode_name}")
+            return
+
+        profile = DETECTION_PROFILES[mode_name]
+        detector.set_classes(profile['classes'])
+        target_mode = mode_name
+        target_label = profile['label']
+        targets = ", ".join(detector.get_target_names())
+        print(f"[Main] Detection mode: {target_label} ({targets})")
+
+    targets = ", ".join(detector.get_target_names())
+    print(f"[Main] Detector model: {DETECTOR_MODEL}")
+    print(f"[Main] Detector confidence: {DETECTOR_CONFIDENCE}")
+    print(f"[Main] Detection mode: {target_label} ({targets})")
     
     # ---------------------------------------------------------------------
     # Step 6: Initialize Decision Logic
@@ -249,6 +361,7 @@ def main():
     # ---------------------------------------------------------------------
     print("[Main] Starting main loop.")
     print("[Main] Controls: q=quit, SPACE=pause, d=debug, +/-=sensitivity, s=screenshot")
+    print("[Main] Target modes: h=humans only, a=animals only, m=humans + animals")
     print("-" * 50)
     
     frame_count = 0
@@ -266,6 +379,8 @@ def main():
             elif key == ord('q'):
                 print("[Main] User pressed 'q'. Exiting.")
                 break
+            elif key in TARGET_MODE_KEYS:
+                set_detection_mode(TARGET_MODE_KEYS[key])
             continue
         
         # Read frame with FPS control
@@ -356,6 +471,11 @@ def main():
         h, w = display_frame.shape[:2]
         cv2.putText(display_frame, status, (10, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+        # Draw current detector target mode above the motion status
+        target_text = f"Target: {target_label}"
+        cv2.putText(display_frame, target_text, (10, h - 35),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         # Draw FPS at top-right corner
         fps_text = f"FPS: {current_fps:.1f}"
@@ -408,6 +528,8 @@ def main():
             timestamp = frame_count
             screenshot.capture(display_frame, timestamp)
             print("[Main] Manual screenshot taken.")
+        elif key in TARGET_MODE_KEYS:
+            set_detection_mode(TARGET_MODE_KEYS[key])
     
     # ---------------------------------------------------------------------
     # Cleanup
@@ -428,7 +550,7 @@ def main():
     print(f"[Main] Enhanced frames: {prep_stats['enhanced']} ({prep_stats['rate']})")
     print(f"[Main] Motion triggers: {motion_stats['triggered']} ({motion_stats['trigger_rate']})")
     print(f"[Main] YOLO inferences: {detector_stats['inferences']}, Detections: {detector_stats['total_detections']}")
-    print(f"[Main] Intrusion detections: {decision_stats['total_intrusions']} (frames where person inside ROI)")
+    print(f"[Main] Intrusion detections: {decision_stats['total_intrusions']} (target objects inside ROI)")
     print(f"[Main] Max intrusion duration: {duration_stats['max_duration']:.1f}s")
     print(f"[Main] Total time in zone: {duration_stats['total_intrusion_time']:.1f}s")
     print(f"[Main] Screenshots saved: {screenshot_stats['total_captures']}")

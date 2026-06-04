@@ -29,7 +29,22 @@
     "detector": {
         "model": "yolov8n.pt",
         "confidence_threshold": 0.4,
-        "classes_of_interest": [0]
+        "classes_of_interest": [0],
+        "active_profile": "humans_only",
+        "target_profiles": {
+            "humans_only": {
+                "label": "Humans only",
+                "classes": [0]
+            },
+            "animals_only": {
+                "label": "Animals only",
+                "classes": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+            },
+            "humans_animals": {
+                "label": "Humans + animals",
+                "classes": [0, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+            }
+        }
     },
     
     "decision": {

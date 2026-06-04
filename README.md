@@ -12,20 +12,21 @@ Cheap → Smart → Decision
 |-------|--------|---------|
 | Cheap | Motion Gate | Filter frames with no activity (saves ~80% compute) |
 | Smart | YOLOv8 Detector | Run AI detection only when motion detected |
-| Decision | Foot-Point Logic | Determine if person is inside restricted zone |
+| Decision | Foot-Point Logic | Determine if target object is inside restricted zone |
 
 ## Features
 
 - **User-defined ROI**: Draw custom polygon zones interactively
 - **Foot-point intrusion detection**: Ground-level spatial reasoning (not bbox center)
 - **Motion-gated YOLO**: Efficient - only runs detection when needed
+- **Configurable targets**: Switch between humans only, animals only, or humans + animals
 - **Low-light enhancement**: Automatic CLAHE when scene is dark
 - **Real-time visualization**: Green (safe) / Red (intrusion) color coding
 - **Intrusion logging**: Timestamped audit trail
 - **Auto-screenshot**: Captures evidence on intrusion
 - **Live controls**: Pause, adjust sensitivity, toggle debug view
 - **Real-time FPS display**: Monitor system performance
-- **Intrusion duration timer**: Shows how long person has been in zone
+- **Intrusion duration timer**: Shows how long a target object has been in zone
 - **Sound alert**: Beep notification on intrusion (Windows)
 
 ## Requirements
@@ -81,6 +82,9 @@ python main.py
 | `+` or `=` | Increase motion sensitivity |
 | `-` | Decrease motion sensitivity |
 | `s` | Take manual screenshot |
+| `h` | Detect humans only |
+| `a` | Detect animals only |
+| `m` | Detect humans + animals |
 
 ### ROI Drawing Controls
 
@@ -109,7 +113,23 @@ All settings are in `configs/config.json`:
         "threshold": 500  // Lower = more sensitive
     },
     "detector": {
-        "confidence_threshold": 0.4
+        "model": "yolov8n.pt",
+        "confidence_threshold": 0.4,
+        "active_profile": "humans_only",
+        "target_profiles": {
+            "humans_only": {
+                "label": "Humans only",
+                "classes": [0]
+            },
+            "animals_only": {
+                "label": "Animals only",
+                "classes": [14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+            },
+            "humans_animals": {
+                "label": "Humans + animals",
+                "classes": [0, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+            }
+        }
     },
     "logging": {
         "screenshot_on_intrusion": true
@@ -153,7 +173,7 @@ Intelligent Virtual Fence/
 [Main] Enhanced frames: 0 (0.0%)
 [Main] Motion triggers: 78 (20.7%)
 [Main] YOLO inferences: 78, Detections: 143
-[Main] Intrusion detections: 58 (frames where person inside ROI)
+[Main] Intrusion detections: 58 (target objects inside ROI)
 [Main] Max intrusion duration: 4.2s
 [Main] Total time in zone: 12.8s
 [Main] Screenshots saved: 2
@@ -163,10 +183,28 @@ Intelligent Virtual Fence/
 ### Log File Sample (`logs/intrusions.log`)
 ```
 [2026-02-11 10:30:45.123] SESSION STARTED
-[2026-02-11 10:30:47.456] INTRUSION - Frame 85: 1 person(s) inside ROI
-  -> Person at foot-point (320, 280), confidence: 0.87
+[2026-02-11 10:30:47.456] INTRUSION - Frame 85: 1 target object(s) inside ROI (person: 1)
+  -> person at foot-point (320, 280), confidence: 0.87
 [2026-02-11 10:31:02.789] SESSION ENDED
 ```
+
+### Target Class IDs
+
+YOLOv8 uses COCO class IDs. The default profiles use:
+
+| ID | Class |
+|----|-------|
+| 0 | person |
+| 14 | bird |
+| 15 | cat |
+| 16 | dog |
+| 17 | horse |
+| 18 | sheep |
+| 19 | cow |
+| 20 | elephant |
+| 21 | bear |
+| 22 | zebra |
+| 23 | giraffe |
 
 ## Technical Details
 

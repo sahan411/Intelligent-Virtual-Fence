@@ -119,10 +119,27 @@ class IntrusionLogger:
         
         Args:
             frame_num: Current frame number
-            num_intrusions: Number of persons inside ROI
+            num_intrusions: Number of target objects inside ROI
             details: Optional list of detection details
         """
-        message = f"INTRUSION - Frame {frame_num}: {num_intrusions} person(s) inside ROI"
+        class_counts = {}
+        if details:
+            for det in details:
+                if det.get('inside_roi', False):
+                    class_name = det.get('class_name', 'object')
+                    class_counts[class_name] = class_counts.get(class_name, 0) + 1
+
+        if class_counts:
+            summary = ", ".join(
+                f"{class_name}: {count}" for class_name, count in sorted(class_counts.items())
+            )
+            message = (
+                f"INTRUSION - Frame {frame_num}: "
+                f"{num_intrusions} target object(s) inside ROI ({summary})"
+            )
+        else:
+            message = f"INTRUSION - Frame {frame_num}: {num_intrusions} target object(s) inside ROI"
+
         self._write_log(message)
         
         # Log individual detection details if provided
@@ -131,7 +148,10 @@ class IntrusionLogger:
                 if det.get('inside_roi', False):
                     conf = det.get('confidence', 0)
                     foot = det.get('foot_point', (0, 0))
-                    self._write_log(f"  -> Person at foot-point {foot}, confidence: {conf:.2f}")
+                    class_name = det.get('class_name', 'object')
+                    self._write_log(
+                        f"  -> {class_name} at foot-point {foot}, confidence: {conf:.2f}"
+                    )
     
     def log_event(self, event_type, message):
         """
