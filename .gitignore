@@ -11,3 +11,9 @@ include/
 dist/
 build/
 *.egg-info/
+
+# Benchmark output (regenerate with: python src/benchmark.py --compare)
+benchmark_results/
+
+# Auto-captured screenshots
+assets/screenshots/
